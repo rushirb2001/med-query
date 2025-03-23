@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "med-query"
+version = "0.1.0"
+description = "LangGraph-based query routing and orchestration for medical textbook retrieval"
+authors = ["Rushir Bhavsar"]
+readme = "README.md"
+packages = [{include = "med_query", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+hybridflow = {path = "../hybrid-flow", develop = true}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
