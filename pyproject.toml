@@ -9,6 +9,9 @@ packages = [{include = "med_query", from = "src"}]
 [tool.poetry.dependencies]
 python = "^3.11"
 hybridflow = {path = "../hybrid-flow", develop = true}
+llama-cpp-python = "*"
+huggingface-hub = "*"
+mlx-lm = "*"
 
 [build-system]
 requires = ["poetry-core"]
