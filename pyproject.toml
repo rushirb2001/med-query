@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "LangGraph-based query routing and orchestration for medical textbook retrieval"
 authors = ["Rushir Bhavsar"]
 readme = "README.md"
-packages = [{include = "med_query", from = "src"}]
+packages = [
+    {include = "med_query", from = "src"},
+    {include = "medquery", from = "src"},
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -12,6 +15,15 @@ hybridflow = {path = "../hybrid-flow", develop = true}
 llama-cpp-python = "*"
 huggingface-hub = "*"
 mlx-lm = "*"
+anthropic = "*"
+pyyaml = "*"
+python-dotenv = "*"
+tqdm = "*"
+pydantic = "^2.0"
+numpy = "*"
+rich = "*"
+click = "*"
+jinja2 = "*"
 
 [build-system]
 requires = ["poetry-core"]
