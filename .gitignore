@@ -52,6 +52,7 @@ coverage.xml
 
 # Environments
 .env
+.env.example
 .venv
 env/
 venv/
@@ -84,3 +85,6 @@ dmypy.json
 CLAUDE.md
 *.db
 *.log
+
+# Generated datasets
+scripts/data/*.json
