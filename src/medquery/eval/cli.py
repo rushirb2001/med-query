@@ -1,0 +1,336 @@
+"""CLI entry point for MedQuery benchmark evaluation.
+
+Usage:
+    medquery-eval benchmark --model mlx-community/Qwen2-1.5B-Instruct-4bit
+    medquery-eval quick-test --sample-size 50
+    medquery-eval report results/20250327_123456
+"""
+
+import asyncio
+from pathlib import Path
+
+import click
+from rich.console import Console
+
+from .config import BenchmarkConfig, ValidationMode, MLX_MODELS
+from .runner import BenchmarkRunner
+from .tui import BenchmarkTUI, print_final_report
+from .reports import ReportGenerator
+
+
+console = Console()
+
+
+@click.group()
+@click.version_option(version="0.1.0", prog_name="medquery-eval")
+def cli():
+    """MedQuery Benchmark Evaluation CLI."""
+    pass
+
+
+@cli.command()
+@click.option(
+    "--model",
+    "-m",
+    default="mlx-community/Qwen2-1.5B-Instruct-4bit",
+    help="Model ID to evaluate",
+)
+@click.option(
+    "--backend",
+    "-b",
+    type=click.Choice(["mlx", "llamacpp", "openai", "anthropic"]),
+    default="mlx",
+    help="Inference backend",
+)
+@click.option(
+    "--dataset",
+    "-d",
+    type=click.Path(exists=True),
+    default="scripts/data",
+    help="Path to dataset directory or file",
+)
+@click.option(
+    "--sample-size",
+    "-n",
+    type=int,
+    default=None,
+    help="Number of queries to sample (default: all)",
+)
+@click.option(
+    "--batch-size",
+    type=int,
+    default=8,
+    help="Batch size for evaluation",
+)
+@click.option(
+    "--num-runs",
+    type=int,
+    default=1,
+    help="Number of evaluation runs",
+)
+@click.option(
+    "--warmup",
+    type=int,
+    default=10,
+    help="Number of warmup queries",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default="results",
+    help="Output directory for results",
+)
+@click.option(
+    "--validation-mode",
+    type=click.Choice(["strict", "lenient", "partial"]),
+    default="lenient",
+    help="Validation strictness",
+)
+@click.option(
+    "--no-tui",
+    is_flag=True,
+    help="Disable TUI dashboard",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Minimal output",
+)
+@click.option(
+    "--save-raw",
+    is_flag=True,
+    help="Save raw model outputs",
+)
+def benchmark(
+    model: str,
+    backend: str,
+    dataset: str,
+    sample_size: int | None,
+    batch_size: int,
+    num_runs: int,
+    warmup: int,
+    output: str,
+    validation_mode: str,
+    no_tui: bool,
+    quiet: bool,
+    save_raw: bool,
+):
+    """Run full benchmark evaluation."""
+    config = BenchmarkConfig(
+        dataset_path=dataset,
+        model_id=model,
+        backend=backend,
+        sample_size=sample_size,
+        batch_size=batch_size,
+        num_runs=num_runs,
+        warmup_queries=warmup,
+        output_dir=output,
+        validation_mode=ValidationMode(validation_mode),
+        enable_tui=not no_tui,
+        quiet=quiet,
+        save_raw_outputs=save_raw,
+    )
+
+    asyncio.run(_run_benchmark(config))
+
+
+@cli.command("quick-test")
+@click.option(
+    "--model",
+    "-m",
+    default="mlx-community/Qwen2-1.5B-Instruct-4bit",
+    help="Model ID to evaluate",
+)
+@click.option(
+    "--dataset",
+    "-d",
+    type=click.Path(exists=True),
+    default="scripts/data",
+    help="Path to dataset",
+)
+@click.option(
+    "--sample-size",
+    "-n",
+    type=int,
+    default=50,
+    help="Number of queries to test",
+)
+def quick_test(model: str, dataset: str, sample_size: int):
+    """Run a quick test with minimal queries."""
+    config = BenchmarkConfig(
+        dataset_path=dataset,
+        model_id=model,
+        sample_size=sample_size,
+        num_runs=1,
+        warmup_queries=5,
+        batch_size=4,
+        enable_tui=False,
+        quiet=False,
+    )
+
+    asyncio.run(_run_benchmark(config))
+
+
+@cli.command()
+@click.argument("results_dir", type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["all", "json", "markdown", "html", "csv"]),
+    default="all",
+    help="Report format to generate",
+)
+def report(results_dir: str, format: str):
+    """Generate reports from existing results."""
+    import json
+
+    results_path = Path(results_dir)
+
+    # Load existing metrics
+    metrics_file = results_path / "metrics.json"
+    config_file = results_path / "config.json"
+
+    if not metrics_file.exists():
+        console.print("[red]Error: metrics.json not found in results directory[/red]")
+        return
+
+    with open(metrics_file) as f:
+        metrics_data = json.load(f)
+
+    # Reconstruct metrics snapshot
+    from .metrics import MetricsSnapshot
+
+    metrics = MetricsSnapshot(
+        total_queries=metrics_data.get("total_queries", 0),
+        valid_outputs=metrics_data.get("valid_outputs", 0),
+        parse_errors=metrics_data.get("parse_errors", 0),
+        medical_accuracy=metrics_data.get("accuracy", {}).get("medical", 0),
+        medical_precision=metrics_data.get("accuracy", {}).get("medical_precision", 0),
+        medical_recall=metrics_data.get("accuracy", {}).get("medical_recall", 0),
+        medical_f1=metrics_data.get("accuracy", {}).get("medical_f1", 0),
+        intent_accuracy=metrics_data.get("accuracy", {}).get("intent", 0),
+        intent_per_class=metrics_data.get("accuracy", {}).get("intent_per_class", {}),
+        entity_precision=metrics_data.get("extraction", {}).get("entity_precision", 0),
+        entity_recall=metrics_data.get("extraction", {}).get("entity_recall", 0),
+        entity_f1=metrics_data.get("extraction", {}).get("entity_f1", 0),
+        relationship_precision=metrics_data.get("extraction", {}).get(
+            "relationship_precision", 0
+        ),
+        relationship_recall=metrics_data.get("extraction", {}).get(
+            "relationship_recall", 0
+        ),
+        relationship_f1=metrics_data.get("extraction", {}).get("relationship_f1", 0),
+        latency_mean=metrics_data.get("performance", {}).get("latency_mean_ms", 0),
+        latency_std=metrics_data.get("performance", {}).get("latency_std_ms", 0),
+        latency_p50=metrics_data.get("performance", {}).get("latency_p50_ms", 0),
+        latency_p90=metrics_data.get("performance", {}).get("latency_p90_ms", 0),
+        latency_p95=metrics_data.get("performance", {}).get("latency_p95_ms", 0),
+        latency_p99=metrics_data.get("performance", {}).get("latency_p99_ms", 0),
+        throughput_qps=metrics_data.get("performance", {}).get("throughput_qps", 0),
+        ece=metrics_data.get("calibration", {}).get("ece", 0),
+        confidence_correlation=metrics_data.get("calibration", {}).get(
+            "confidence_correlation", 0
+        ),
+        overconfidence_rate=metrics_data.get("calibration", {}).get(
+            "overconfidence_rate", 0
+        ),
+        failure_modes=metrics_data.get("failure_modes", {}),
+    )
+
+    # Load config if available
+    if config_file.exists():
+        with open(config_file) as f:
+            config_data = json.load(f)
+        config = BenchmarkConfig(
+            dataset_path=config_data.get("dataset_path", "scripts/data"),
+            model_id=config_data.get("model_id", "unknown"),
+            backend=config_data.get("backend", "mlx"),
+        )
+    else:
+        config = BenchmarkConfig(
+            dataset_path="scripts/data",
+            model_id="unknown",
+        )
+
+    # Generate reports
+    generator = ReportGenerator(config, metrics)
+
+    if format == "all":
+        paths = generator.generate_all(results_path)
+        console.print(f"[green]Generated reports:[/green]")
+        for fmt, path in paths.items():
+            console.print(f"  {fmt}: {path}")
+    else:
+        method = getattr(generator, f"generate_{format}")
+        suffix = {"json": ".json", "markdown": ".md", "html": ".html", "csv": ".csv"}[
+            format
+        ]
+        path = method(results_path / f"report{suffix}")
+        console.print(f"[green]Generated {format} report: {path}[/green]")
+
+
+@cli.command()
+def list_models():
+    """List available pre-configured models."""
+    console.print("\n[bold]MLX Models (Apple Silicon):[/bold]")
+    for name, config in MLX_MODELS.items():
+        console.print(f"  {name}: {config.model_id}")
+
+    console.print("\n[bold]Usage:[/bold]")
+    console.print("  medquery-eval benchmark --model mlx-community/Qwen2-1.5B-Instruct-4bit")
+    console.print("  medquery-eval benchmark -m mlx-community/Phi-3-mini-4k-instruct-4bit")
+
+
+async def _run_benchmark(config: BenchmarkConfig):
+    """Run benchmark with TUI or quiet mode."""
+    tui = None
+
+    if config.enable_tui and not config.quiet:
+        tui = BenchmarkTUI()
+        runner = BenchmarkRunner(config, progress_callback=tui.progress_callback)
+        tui.start()
+    else:
+        def log_progress(progress):
+            if not config.quiet:
+                console.print(
+                    f"[{progress.phase}] {progress.current}/{progress.total}",
+                    end="\r",
+                )
+
+        runner = BenchmarkRunner(config, progress_callback=log_progress)
+
+    try:
+        metrics = await runner.run()
+
+        if tui:
+            tui.set_final_metrics(metrics)
+            tui.stop()
+
+        # Print final report
+        if not config.quiet:
+            print_final_report(metrics, console)
+
+        # Generate reports
+        generator = ReportGenerator(config, metrics, runner.get_collector())
+        paths = generator.generate_all(config.results_dir)
+
+        console.print(f"\n[green]Results saved to: {config.results_dir}[/green]")
+        for fmt, path in paths.items():
+            console.print(f"  {fmt}: {path.name}")
+
+    except Exception as e:
+        if tui:
+            tui.stop()
+        console.print(f"[red]Error: {e}[/red]")
+        raise click.Abort()
+
+
+def main():
+    """Entry point for CLI."""
+    cli()
+
+
+if __name__ == "__main__":
+    main()
