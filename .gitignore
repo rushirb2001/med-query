@@ -88,3 +88,6 @@ CLAUDE.md
 
 # Generated datasets
 scripts/data/*.json
+
+# Benchmark results
+results/
