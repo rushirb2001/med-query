@@ -35,22 +35,22 @@ from generators.templates import QUERY_TEMPLATES
 
 # P1 Dataset configuration
 P1_CONFIG = {
-    # "medical_conceptual": {
-    #     "count": 1500,
-    #     "template": QUERY_TEMPLATES["medical_conceptual"],
-    #     "level": "L1",
-    #     "is_medical": True,
-    #     "intent": "conceptual",
-    #     "output": "data/medical_conceptual.json",
-    # },
-    # "medical_procedural": {
-    #     "count": 1500,
-    #     "template": QUERY_TEMPLATES["medical_procedural"],
-    #     "level": "L1",
-    #     "is_medical": True,
-    #     "intent": "procedural",
-    #     "output": "data/medical_procedural.json",
-    # },
+    "medical_conceptual": {
+        "count": 1500,
+        "template": QUERY_TEMPLATES["medical_conceptual"],
+        "level": "L1",
+        "is_medical": True,
+        "intent": "conceptual",
+        "output": "data/medical_conceptual.json",
+    },
+    "medical_procedural": {
+        "count": 1500,
+        "template": QUERY_TEMPLATES["medical_procedural"],
+        "level": "L1",
+        "is_medical": True,
+        "intent": "procedural",
+        "output": "data/medical_procedural.json",
+    },
     "medical_relationship": {
         "count": 1000,
         "template": QUERY_TEMPLATES["medical_relationship"],
@@ -66,6 +66,7 @@ P1_CONFIG = {
         "is_medical": True,
         "intent": None,  # Mixed intents
         "output": "data/medical_complex.json",
+        "batch_size": 7,
     },
     "non_medical": {
         "count": 2000,

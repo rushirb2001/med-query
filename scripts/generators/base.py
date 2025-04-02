@@ -321,7 +321,7 @@ Return JSON array now:"""
                         type=e.get("type", "concept"),
                         cui=e.get("cui"),
                     )
-                    for e in item.get("entities", [])
+                    for e in (item.get("entities") or [])
                 ]
 
                 relationships = [
@@ -330,7 +330,7 @@ Return JSON array now:"""
                         target=r.get("target", ""),
                         type=r.get("type", "affects"),
                     )
-                    for r in item.get("relationships", [])
+                    for r in (item.get("relationships") or [])
                 ]
 
                 decomposition = [
@@ -338,7 +338,7 @@ Return JSON array now:"""
                         query=s.get("query", ""),
                         intent=s.get("intent", "conceptual"),
                     )
-                    for s in item.get("decomposition", [])
+                    for s in (item.get("decomposition") or [])
                 ]
 
                 queries.append(GeneratedQuery(
