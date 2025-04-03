@@ -16,16 +16,42 @@ from .config import BenchmarkConfig, ValidationMode, MLX_MODELS
 from .runner import BenchmarkRunner
 from .tui import BenchmarkTUI, print_final_report
 from .reports import ReportGenerator
+from ..logging import setup_logging, get_logger
 
-
+logger = get_logger(__name__)
 console = Console()
 
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="medquery-eval")
-def cli():
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="Enable verbose output (INFO level logging)",
+)
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Enable debug output (DEBUG level logging)",
+)
+@click.option(
+    "--log-file",
+    type=click.Path(),
+    help="Write logs to file",
+)
+@click.pass_context
+def cli(ctx: click.Context, verbose: bool, debug: bool, log_file: str | None):
     """MedQuery Benchmark Evaluation CLI."""
-    pass
+    # Ensure context object exists
+    ctx.ensure_object(dict)
+
+    # Setup logging based on flags
+    setup_logging(verbose=verbose, debug=debug, log_file=log_file)
+
+    if debug:
+        logger.debug("Debug logging enabled")
+    elif verbose:
+        logger.info("Verbose logging enabled")
 
 
 @cli.command()
@@ -103,6 +129,18 @@ def cli():
     is_flag=True,
     help="Save raw model outputs",
 )
+@click.option(
+    "--prompt-preset",
+    "-p",
+    type=click.Choice(["minimal", "standard", "comprehensive"]),
+    default=None,
+    help="Prompt preset to use (default: standard)",
+)
+@click.option(
+    "--adaptive-prompt",
+    is_flag=True,
+    help="Enable adaptive prompt selection per query",
+)
 def benchmark(
     model: str,
     backend: str,
@@ -116,6 +154,8 @@ def benchmark(
     no_tui: bool,
     quiet: bool,
     save_raw: bool,
+    prompt_preset: str | None,
+    adaptive_prompt: bool,
 ):
     """Run full benchmark evaluation."""
     config = BenchmarkConfig(
@@ -131,6 +171,8 @@ def benchmark(
         enable_tui=not no_tui,
         quiet=quiet,
         save_raw_outputs=save_raw,
+        prompt_preset=prompt_preset,
+        adaptive_prompt=adaptive_prompt,
     )
 
     asyncio.run(_run_benchmark(config))
@@ -193,7 +235,7 @@ def report(results_dir: str, format: str):
     config_file = results_path / "config.json"
 
     if not metrics_file.exists():
-        console.print("[red]Error: metrics.json not found in results directory[/red]")
+        logger.error("metrics.json not found in results directory")
         return
 
     with open(metrics_file) as f:
@@ -259,28 +301,28 @@ def report(results_dir: str, format: str):
 
     if format == "all":
         paths = generator.generate_all(results_path)
-        console.print(f"[green]Generated reports:[/green]")
+        logger.info("Generated reports:")
         for fmt, path in paths.items():
-            console.print(f"  {fmt}: {path}")
+            logger.info(f"  {fmt}: {path}")
     else:
         method = getattr(generator, f"generate_{format}")
         suffix = {"json": ".json", "markdown": ".md", "html": ".html", "csv": ".csv"}[
             format
         ]
         path = method(results_path / f"report{suffix}")
-        console.print(f"[green]Generated {format} report: {path}[/green]")
+        logger.info(f"Generated {format} report: {path}")
 
 
 @cli.command()
 def list_models():
     """List available pre-configured models."""
-    console.print("\n[bold]MLX Models (Apple Silicon):[/bold]")
+    logger.info("MLX Models (Apple Silicon):")
     for name, config in MLX_MODELS.items():
-        console.print(f"  {name}: {config.model_id}")
+        logger.info(f"  {name}: {config.model_id}")
 
-    console.print("\n[bold]Usage:[/bold]")
-    console.print("  medquery-eval benchmark --model mlx-community/Qwen2-1.5B-Instruct-4bit")
-    console.print("  medquery-eval benchmark -m mlx-community/Phi-3-mini-4k-instruct-4bit")
+    logger.info("Usage:")
+    logger.info("  medquery-eval benchmark --model mlx-community/Qwen2-1.5B-Instruct-4bit")
+    logger.info("  medquery-eval benchmark -m mlx-community/Phi-3-mini-4k-instruct-4bit")
 
 
 async def _run_benchmark(config: BenchmarkConfig):
@@ -294,10 +336,16 @@ async def _run_benchmark(config: BenchmarkConfig):
     else:
         def log_progress(progress):
             if not config.quiet:
-                console.print(
-                    f"[{progress.phase}] {progress.current}/{progress.total}",
-                    end="\r",
-                )
+                # Use logger for proper verbose output
+                if progress.latency_ms is not None:
+                    valid_str = "valid" if progress.is_valid else "invalid"
+                    logger.info(
+                        f"{progress.phase.upper()} {progress.current}/{progress.total} - "
+                        f"{valid_str}, {progress.latency_ms:.0f}ms"
+                    )
+                elif progress.current % 5 == 0 or progress.current == progress.total:
+                    # Log every 5th warmup query or completion
+                    logger.info(f"{progress.phase.upper()} {progress.current}/{progress.total}")
 
         runner = BenchmarkRunner(config, progress_callback=log_progress)
 
@@ -316,14 +364,14 @@ async def _run_benchmark(config: BenchmarkConfig):
         generator = ReportGenerator(config, metrics, runner.get_collector())
         paths = generator.generate_all(config.results_dir)
 
-        console.print(f"\n[green]Results saved to: {config.results_dir}[/green]")
+        logger.info(f"Results saved to: {config.results_dir}")
         for fmt, path in paths.items():
-            console.print(f"  {fmt}: {path.name}")
+            logger.info(f"  {fmt}: {path.name}")
 
     except Exception as e:
         if tui:
             tui.stop()
-        console.print(f"[red]Error: {e}[/red]")
+        logger.error(f"Benchmark error: {e}")
         raise click.Abort()
 
 

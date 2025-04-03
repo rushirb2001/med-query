@@ -10,6 +10,10 @@ from typing import Literal
 from datetime import datetime
 
 from .validators import ValidationMode
+from ..backends.prompts import PromptPreset
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 BackendType = Literal["mlx", "llamacpp", "vllm", "openai", "anthropic"]
@@ -36,6 +40,10 @@ class BenchmarkConfig:
     model_id: str = "mlx-community/Qwen2-1.5B-Instruct-4bit"
     max_tokens: int = 256
     temperature: float = 0.0  # Deterministic for benchmarks
+
+    # Prompt configuration
+    prompt_preset: PromptPreset | None = None  # None = use default "standard"
+    adaptive_prompt: bool = False  # If True, select prompt per-query
 
     # Validation
     validation_mode: ValidationMode = ValidationMode.LENIENT
@@ -81,6 +89,8 @@ class BenchmarkConfig:
             "model_id": self.model_id,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
+            "prompt_preset": self.prompt_preset,
+            "adaptive_prompt": self.adaptive_prompt,
             "validation_mode": self.validation_mode.value,
             "output_dir": str(self.output_dir),
             "run_name": self.run_name,
@@ -192,6 +202,7 @@ def load_config_from_file(path: str | Path) -> BenchmarkConfig:
     import yaml
 
     path = Path(path)
+    logger.info(f"Loading config from {path}")
 
     with open(path) as f:
         if path.suffix in (".yaml", ".yml"):
@@ -203,6 +214,7 @@ def load_config_from_file(path: str | Path) -> BenchmarkConfig:
     if "validation_mode" in data:
         data["validation_mode"] = ValidationMode(data["validation_mode"])
 
+    logger.debug(f"Loaded config: model={data.get('model_id')}, backend={data.get('backend')}")
     return BenchmarkConfig(**data)
 
 

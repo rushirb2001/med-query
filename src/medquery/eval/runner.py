@@ -19,6 +19,9 @@ from .schemas import TestQuery, ExpectedOutput, QueryAnalysis, ValidationResult
 from .validators import OutputValidator
 from .metrics import QueryResult, MetricsCollector, MetricsSnapshot
 from .config import BenchmarkConfig
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -62,22 +65,31 @@ class BenchmarkRunner:
         """Initialize backend and load dataset."""
         from ..backends.base import BackendFactory
 
-        # Create backend
+        logger.info(f"Setting up benchmark: backend={self.config.backend}, model={self.config.model_id}")
+
+        # Create backend with prompt configuration
         self._backend = BackendFactory.create(
             backend_type=self.config.backend,
             model_id=self.config.model_id,
+            prompt_preset=self.config.prompt_preset,
+            adaptive_prompt=self.config.adaptive_prompt,
         )
 
         # Load model
+        logger.debug("Loading model...")
         await self._backend.load()
 
         # Load dataset
+        logger.info(f"Loading dataset from: {self.config.dataset_path}")
         self._queries = self._load_dataset()
+        logger.info(f"Loaded {len(self._queries)} queries for evaluation")
 
     async def teardown(self) -> None:
         """Cleanup resources."""
+        logger.debug("Tearing down benchmark runner")
         if self._backend:
             await self._backend.unload()
+        logger.debug("Teardown complete")
 
     def _load_dataset(self) -> list[TestQuery]:
         """Load and filter dataset from config path."""
@@ -125,11 +137,14 @@ class BenchmarkRunner:
     async def run_warmup(self) -> None:
         """Run warmup queries to stabilize performance."""
         if not self._queries:
+            logger.warning("No queries loaded, skipping warmup")
             return
 
         warmup_queries = self._queries[: self.config.warmup_queries]
+        logger.info(f"Running {len(warmup_queries)} warmup queries")
 
         for i, test_query in enumerate(warmup_queries):
+            logger.debug(f"Warmup {i + 1}/{len(warmup_queries)}: {test_query.query[:40]}...")
             self.progress_callback(
                 RunProgress(
                     phase="warmup",
@@ -147,8 +162,10 @@ class BenchmarkRunner:
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
                 )
-            except Exception:
-                pass  # Ignore warmup errors
+            except Exception as e:
+                logger.debug(f"Warmup error (ignored): {e}")
+
+        logger.info("Warmup complete")
 
     async def run_evaluation(self) -> AsyncIterator[QueryResult]:
         """Run evaluation and yield results.
@@ -156,7 +173,12 @@ class BenchmarkRunner:
         Yields:
             QueryResult for each evaluated query
         """
+        logger.info(f"Starting evaluation on {len(self._queries)} queries")
+        valid_count = 0
         for i, test_query in enumerate(self._queries):
+            # Log progress every 10 queries or at key milestones
+            if (i + 1) % 1 == 0 or (i + 1) == len(self._queries):
+                logger.info(f"Progress: {i + 1}/{len(self._queries)} queries ({valid_count} valid so far)")
             self.progress_callback(
                 RunProgress(
                     phase="evaluation",
@@ -180,6 +202,7 @@ class BenchmarkRunner:
                 )
             except Exception as e:
                 error = str(e)
+                logger.warning(f"Generation error for query {test_query.id}: {error}")
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 
@@ -218,6 +241,10 @@ class BenchmarkRunner:
                 latency_ms=latency_ms,
             )
 
+            # Track valid count for progress logging
+            if result.is_valid:
+                valid_count += 1
+
             # Store raw output if configured
             if self.config.save_raw_outputs:
                 self._raw_outputs.append(
@@ -251,6 +278,7 @@ class BenchmarkRunner:
         Returns:
             Aggregated metrics from the run
         """
+        logger.info("Starting benchmark run")
         await self.setup()
 
         try:
@@ -263,8 +291,11 @@ class BenchmarkRunner:
             # Run evaluation
             async for result in self.run_evaluation():
                 self._collector.add(result)
+                if not result.is_valid:
+                    logger.debug(f"Invalid result for query {result.query_id}: {result.validation.errors}")
 
             # Compute metrics
+            logger.debug("Computing final metrics")
             self.progress_callback(
                 RunProgress(
                     phase="computing",
@@ -274,9 +305,12 @@ class BenchmarkRunner:
             )
 
             metrics = self._collector.compute()
+            logger.info(f"Benchmark complete: {metrics.valid_outputs}/{metrics.total_queries} valid, "
+                       f"medical_acc={metrics.medical_accuracy:.1%}, intent_acc={metrics.intent_accuracy:.1%}")
 
             # Save results if configured
             if self.config.save_predictions or self.config.save_raw_outputs:
+                logger.debug(f"Saving results to: {self.config.results_dir}")
                 self._save_results(metrics)
 
             return metrics

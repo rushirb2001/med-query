@@ -7,6 +7,9 @@ import asyncio
 from typing import Any
 
 from .base import BaseBackend, DEFAULT_SYSTEM_PROMPT
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MLXBackend(BaseBackend):
@@ -16,21 +19,33 @@ class MLXBackend(BaseBackend):
         self,
         model_id: str,
         system_prompt: str | None = None,
+        prompt_preset: str | None = None,
+        adaptive_prompt: bool = False,
     ):
         """Initialize MLX backend.
 
         Args:
             model_id: HuggingFace model ID (e.g., "mlx-community/Qwen2-1.5B-Instruct-4bit")
             system_prompt: Optional custom system prompt
+            prompt_preset: Preset name ("minimal", "standard", "comprehensive")
+            adaptive_prompt: If True, select prompt based on query characteristics
         """
-        super().__init__(model_id, system_prompt)
+        super().__init__(
+            model_id,
+            system_prompt=system_prompt,
+            prompt_preset=prompt_preset,
+            adaptive_prompt=adaptive_prompt,
+        )
         self._model = None
         self._tokenizer = None
 
     async def load(self) -> None:
         """Load model using mlx-lm."""
         if self._loaded:
+            logger.debug("Model already loaded, skipping")
             return
+
+        logger.info(f"Loading MLX model: {self._model_id}")
 
         from mlx_lm import load
 
@@ -41,12 +56,15 @@ class MLXBackend(BaseBackend):
             lambda: load(self._model_id),
         )
         self._loaded = True
+        logger.info(f"Model loaded successfully: {self._model_id}")
 
     async def unload(self) -> None:
         """Unload model to free memory."""
         if not self._loaded:
+            logger.debug("Model not loaded, nothing to unload")
             return
 
+        logger.info(f"Unloading model: {self._model_id}")
         self._model = None
         self._tokenizer = None
         self._loaded = False
@@ -54,6 +72,7 @@ class MLXBackend(BaseBackend):
         # Force garbage collection
         import gc
         gc.collect()
+        logger.debug("Model unloaded and garbage collected")
 
     async def generate(
         self,
@@ -76,9 +95,15 @@ class MLXBackend(BaseBackend):
 
         from mlx_lm import generate
 
-        # Build chat messages
+        logger.debug(f"Generating response for query: {query[:50]}...")
+
+        # Build chat messages with adaptive prompt selection
+        system_prompt = self.get_prompt_for_query(query)
+        if self._adaptive_prompt:
+            logger.debug(f"Adaptive prompt selected ({len(system_prompt)} chars)")
+
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": self._build_prompt(query)},
         ]
 
@@ -108,6 +133,7 @@ class MLXBackend(BaseBackend):
         # Estimate tokens (rough)
         self._total_tokens += len(response.split()) * 1.3
 
+        logger.debug(f"Generated response ({len(response)} chars): {response[:100]}...")
         return response
 
     async def generate_batch(

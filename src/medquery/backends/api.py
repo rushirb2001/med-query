@@ -7,6 +7,9 @@ import asyncio
 from typing import Any
 
 from .base import BaseBackend, DEFAULT_SYSTEM_PROMPT, BackendFactory
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OpenAIBackend(BaseBackend):
@@ -34,6 +37,7 @@ class OpenAIBackend(BaseBackend):
         if self._loaded:
             return
 
+        logger.info(f"Loading OpenAI backend: {self._model_id}")
         try:
             from openai import AsyncOpenAI
         except ImportError:
@@ -43,6 +47,7 @@ class OpenAIBackend(BaseBackend):
 
         self._client = AsyncOpenAI(api_key=self._api_key)
         self._loaded = True
+        logger.debug("OpenAI client initialized")
 
     async def unload(self) -> None:
         """Close client."""
@@ -144,6 +149,7 @@ class AnthropicBackend(BaseBackend):
         if self._loaded:
             return
 
+        logger.info(f"Loading Anthropic backend: {self._model_id}")
         try:
             from anthropic import AsyncAnthropic
         except ImportError:
@@ -153,6 +159,7 @@ class AnthropicBackend(BaseBackend):
 
         self._client = AsyncAnthropic(api_key=self._api_key)
         self._loaded = True
+        logger.debug("Anthropic client initialized")
 
     async def unload(self) -> None:
         """Close client."""

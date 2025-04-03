@@ -13,6 +13,9 @@ from pathlib import Path
 
 from .metrics import MetricsSnapshot, MetricsCollector
 from .config import BenchmarkConfig
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ReportGenerator:
@@ -47,6 +50,7 @@ class ReportGenerator:
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Generating reports in {output_dir}")
 
         paths = {}
         paths["json"] = self.generate_json(output_dir / "report.json")
@@ -54,6 +58,7 @@ class ReportGenerator:
         paths["html"] = self.generate_html(output_dir / "report.html")
         paths["csv"] = self.generate_csv(output_dir / "results.csv")
 
+        logger.debug(f"Generated {len(paths)} report formats")
         return paths
 
     def generate_json(self, path: Path) -> Path:

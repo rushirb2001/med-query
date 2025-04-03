@@ -11,6 +11,10 @@ import json
 import re
 from dataclasses import dataclass
 
+from ..logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class ParseResult:
@@ -42,35 +46,43 @@ class JSONExtractor:
             ParseResult with extracted data or error
         """
         if not raw or not raw.strip():
+            logger.debug("Empty output received")
             return ParseResult(None, "Empty output", None)
 
         raw = raw.strip()
+        logger.debug(f"Attempting JSON extraction from {len(raw)} chars")
 
         # Strategy 1: Direct JSON parse
         result = JSONExtractor._try_direct_parse(raw)
         if result.data is not None:
+            logger.debug("JSON extracted via direct parse")
             return result
 
         # Strategy 2: Find {...} block
         result = JSONExtractor._try_brace_extraction(raw)
         if result.data is not None:
+            logger.debug("JSON extracted via brace extraction")
             return result
 
         # Strategy 3: Find ```json...``` block
         result = JSONExtractor._try_markdown_extraction(raw)
         if result.data is not None:
+            logger.debug("JSON extracted via markdown code block")
             return result
 
         # Strategy 4: Find after "JSON:" marker
         result = JSONExtractor._try_marker_extraction(raw)
         if result.data is not None:
+            logger.debug("JSON extracted via marker extraction")
             return result
 
         # Strategy 5: Try to repair common errors
         result = JSONExtractor._try_repair(raw)
         if result.data is not None:
+            logger.debug("JSON extracted via repair")
             return result
 
+        logger.warning(f"Could not extract valid JSON from: {raw[:100]}...")
         return ParseResult(None, "Could not extract valid JSON", None)
 
     @staticmethod

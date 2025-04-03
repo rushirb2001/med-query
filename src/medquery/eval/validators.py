@@ -20,6 +20,9 @@ from .schemas import (
     ExpectedOutput,
 )
 from .parsers import JSONExtractor
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ValidationMode(Enum):
@@ -58,6 +61,7 @@ class OutputValidator:
         parse_result = JSONExtractor.extract(raw_output)
 
         if parse_result.data is None:
+            logger.debug(f"JSON extraction failed: {parse_result.error}")
             return ValidationResult(
                 valid=False,
                 parsed=None,
@@ -113,6 +117,14 @@ class OutputValidator:
         self, data: dict[str, Any], errors: list[str], warnings: list[str]
     ) -> QueryAnalysis | None:
         """Lenient validation - coerce types, fill defaults."""
+        # Handle nested medical object: {medical: {value: true, confidence: 0.98}}
+        if "medical" in data and isinstance(data["medical"], dict):
+            medical_obj = data.pop("medical")
+            data["is_medical"] = medical_obj.get("value", False)
+            if "confidence" not in data:
+                data["confidence"] = medical_obj.get("confidence", 0.5)
+            warnings.append("Flattened nested 'medical' object")
+
         # Coerce is_medical
         if "is_medical" not in data:
             if "medical" in data:
@@ -143,8 +155,12 @@ class OutputValidator:
                 data["confidence"] = 0.5
                 warnings.append("Invalid confidence value, defaulting to 0.5")
 
-        # Coerce intent
-        if "primary_intent" not in data and "intent" in data:
+        # Handle nested intent object: {intent: {primary: "conceptual", secondary: null}}
+        if "intent" in data and isinstance(data["intent"], dict):
+            intent_obj = data.pop("intent")
+            data["primary_intent"] = intent_obj.get("primary")
+            warnings.append("Flattened nested 'intent' object")
+        elif "primary_intent" not in data and "intent" in data:
             data["primary_intent"] = data.pop("intent")
             warnings.append("Coerced 'intent' to 'primary_intent'")
 
@@ -155,8 +171,9 @@ class OutputValidator:
             "relation": "relationship",
             "reference": "lookup",
         }
-        if data.get("primary_intent") in intent_map:
-            data["primary_intent"] = intent_map[data["primary_intent"]]
+        primary_intent = data.get("primary_intent")
+        if isinstance(primary_intent, str) and primary_intent in intent_map:
+            data["primary_intent"] = intent_map[primary_intent]
             warnings.append("Normalized primary_intent value")
 
         # Validate entities format

@@ -7,16 +7,17 @@ provides a factory for creating backends by type.
 from typing import Protocol, runtime_checkable, Any
 from abc import abstractmethod
 
+from .prompts import PROMPT_PRESETS, get_prompt, PromptPreset, PromptSelector
+from ..logging import get_logger
 
-# Default system prompt for query classification
-DEFAULT_SYSTEM_PROMPT = """You are a medical query classifier. Analyze queries and output JSON with:
-- is_medical: boolean (true if medical domain)
-- confidence: float 0.0-1.0
-- primary_intent: "conceptual" | "procedural" | "relationship" | "lookup" | null
-- entities: array of {text, type, cui} where type is condition|procedure|anatomy|process|concept|medication
-- relationships: array of {source, target, type} where type is affects|causes|treats|indicates|compared_to
+logger = get_logger(__name__)
 
-Output ONLY valid JSON, no explanation."""
+
+# Default system prompt - now uses "standard" preset with intent rules
+DEFAULT_SYSTEM_PROMPT = PROMPT_PRESETS["standard"]
+
+# Global prompt selector for adaptive prompt selection
+_prompt_selector = PromptSelector(default_preset="standard")
 
 
 @runtime_checkable
@@ -93,12 +94,42 @@ class BaseBackend:
         self,
         model_id: str,
         system_prompt: str | None = None,
+        prompt_preset: PromptPreset | None = None,
+        adaptive_prompt: bool = False,
     ):
+        """Initialize backend.
+
+        Args:
+            model_id: Model identifier
+            system_prompt: Explicit system prompt (highest priority)
+            prompt_preset: Preset name ("minimal", "standard", "comprehensive")
+            adaptive_prompt: If True, select prompt based on query characteristics
+        """
         self._model_id = model_id
-        self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self._adaptive_prompt = adaptive_prompt
+        self._prompt_selector = PromptSelector(
+            default_preset=prompt_preset or "standard"
+        )
+
+        # Priority: explicit system_prompt > prompt_preset > default
+        if system_prompt is not None:
+            self._base_prompt = system_prompt
+            logger.debug(f"Using custom system prompt ({len(system_prompt)} chars)")
+        elif prompt_preset is not None:
+            self._base_prompt = get_prompt(prompt_preset)
+            logger.debug(f"Using prompt preset: {prompt_preset}")
+        else:
+            self._base_prompt = DEFAULT_SYSTEM_PROMPT
+            logger.debug("Using default system prompt (standard)")
+
+        # For backwards compatibility
+        self.system_prompt = self._base_prompt
+
         self._loaded = False
         self._total_tokens = 0
         self._total_requests = 0
+
+        logger.info(f"Initialized backend: model={model_id}, adaptive={adaptive_prompt}")
 
     @property
     def model_id(self) -> str:
@@ -108,12 +139,26 @@ class BaseBackend:
     def is_loaded(self) -> bool:
         return self._loaded
 
+    def get_prompt_for_query(self, query: str) -> str:
+        """Get the appropriate system prompt for a query.
+
+        Args:
+            query: The user query
+
+        Returns:
+            System prompt string (adaptive or static based on config)
+        """
+        if self._adaptive_prompt:
+            return self._prompt_selector.select(query)
+        return self._base_prompt
+
     def get_stats(self) -> dict[str, Any]:
         return {
             "model_id": self._model_id,
             "loaded": self._loaded,
             "total_tokens": self._total_tokens,
             "total_requests": self._total_requests,
+            "adaptive_prompt": self._adaptive_prompt,
         }
 
     def _build_prompt(self, query: str) -> str:
@@ -156,16 +201,21 @@ class BackendFactory:
         Raises:
             ValueError: If backend type is unknown
         """
+        logger.debug(f"Creating backend: type={backend_type}, model={model_id}")
+
         if backend_type not in cls._backends:
             # Try lazy import
+            logger.debug(f"Lazy importing backend: {backend_type}")
             cls._lazy_import(backend_type)
 
         if backend_type not in cls._backends:
             available = list(cls._backends.keys())
+            logger.error(f"Unknown backend: {backend_type}. Available: {available}")
             raise ValueError(
                 f"Unknown backend: {backend_type}. Available: {available}"
             )
 
+        logger.info(f"Created {backend_type} backend for {model_id}")
         return cls._backends[backend_type](model_id, **kwargs)
 
     @classmethod

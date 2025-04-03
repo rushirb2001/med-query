@@ -12,6 +12,9 @@ from typing import Any
 import numpy as np
 
 from .schemas import QueryAnalysis, ExpectedOutput, ValidationResult
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -149,6 +152,7 @@ class MetricsCollector:
         """Add a query result."""
         self.results.append(result)
         self._total_time_ms += result.latency_ms
+        logger.debug(f"Added result for query {result.query_id}: valid={result.is_valid}, latency={result.latency_ms:.1f}ms")
 
     def clear(self) -> None:
         """Clear all results."""
@@ -163,7 +167,10 @@ class MetricsCollector:
                                Set to False for nested computations to avoid recursion.
         """
         if not self.results:
+            logger.warning("No results to compute metrics from")
             return MetricsSnapshot()
+
+        logger.debug(f"Computing metrics from {len(self.results)} results")
 
         snapshot = MetricsSnapshot()
         snapshot.total_queries = len(self.results)
@@ -197,6 +204,8 @@ class MetricsCollector:
         if include_breakdowns:
             self._compute_breakdowns(snapshot)
 
+        logger.info(f"Metrics computed: {snapshot.valid_outputs}/{snapshot.total_queries} valid, "
+                   f"medical_acc={snapshot.medical_accuracy:.1%}, intent_acc={snapshot.intent_accuracy:.1%}")
         return snapshot
 
     def _compute_medical_accuracy(
@@ -386,8 +395,10 @@ class MetricsCollector:
         snapshot.ece = ece
 
         # Confidence correlation (Pearson)
+        # Suppress warning when std=0 (all values identical)
         if len(confidences) > 1:
-            snapshot.confidence_correlation = np.corrcoef(confidences, correct)[0, 1]
+            with np.errstate(divide='ignore', invalid='ignore'):
+                snapshot.confidence_correlation = np.corrcoef(confidences, correct)[0, 1]
             if np.isnan(snapshot.confidence_correlation):
                 snapshot.confidence_correlation = 0.0
 

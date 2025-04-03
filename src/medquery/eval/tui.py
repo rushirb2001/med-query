@@ -21,6 +21,9 @@ from rich.text import Text
 
 from .runner import RunProgress
 from .metrics import MetricsSnapshot
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -106,6 +109,7 @@ class BenchmarkTUI:
 
     def start(self) -> None:
         """Start the TUI display."""
+        logger.debug("Starting TUI dashboard")
         self._start_time = time.time()
         self._live = Live(
             self._build_display(),
@@ -117,6 +121,7 @@ class BenchmarkTUI:
 
     def stop(self) -> None:
         """Stop the TUI display."""
+        logger.debug("Stopping TUI dashboard")
         if self._live:
             self._live.stop()
 
