@@ -4,15 +4,9 @@ Defines the expected output structure from LLM query classification,
 including entities, relationships, intents, and decomposition.
 """
 
-from typing import Literal
 from pydantic import BaseModel, Field
 
-
-# Type definitions
-EntityType = Literal["condition", "procedure", "anatomy", "process", "concept", "medication"]
-RelationshipType = Literal["affects", "causes", "treats", "indicates", "has_property", "compared_to", "part_of", "precedes"]
-IntentType = Literal["conceptual", "procedural", "relationship", "lookup"]
-RetrievalStrategy = Literal["vector_search", "graph_traversal", "hybrid_search", "metadata_lookup"]
+from ..types import EntityType, RelationshipType, IntentType, RetrievalStrategy
 
 
 class Entity(BaseModel):

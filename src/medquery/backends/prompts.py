@@ -6,27 +6,17 @@ Provides structured prompts for:
 - Entity extraction
 - Relationship extraction
 - Query decomposition
+
+Note: This is for INFERENCE prompts (model-agnostic).
+For dataset generation prompts, see medquery.generators.prompts.
 """
 
 from typing import Literal
 
+from ..types import OUTPUT_SCHEMA_STR
 from ..logging import get_logger
 
 logger = get_logger(__name__)
-
-# =============================================================================
-# OUTPUT SCHEMA STRING
-# =============================================================================
-
-OUTPUT_SCHEMA_STR = """{
-  "medical": {"value": true|false, "confidence": 0.0-1.0},
-  "intent": {"primary": "conceptual"|"procedural"|"relationship"|"lookup"|null, "secondary": ...},
-  "entities": [{"text": "...", "type": "condition|procedure|anatomy|process|concept|medication", "cui": null}],
-  "relationships": [{"source": "...", "target": "...", "type": "affects|causes|treats|indicates|compared_to"}],
-  "decompose": true|false,
-  "sub_queries": [{"query": "...", "intent": "..."}] | null,
-  "retrieval_hint": "vector_search"|"graph_traversal"|"hybrid_search"|"metadata_lookup"|"graph_then_vector"
-}"""
 
 
 # =============================================================================
