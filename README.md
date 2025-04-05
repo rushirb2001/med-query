@@ -13,6 +13,12 @@ MedQuery is an intelligent query router that classifies user intent and orchestr
 - Conversation state management
 - Tool calling with structured outputs
 - Citation formatting
+- Medical domain boundary detection with disambiguation
+- Entity extraction (condition, procedure, anatomy, process, concept, medication)
+- Relationship extraction (affects, causes, treats, indicates, compared_to)
+- Query decomposition for multi-intent queries
+- Benchmark evaluation framework with configurable validation modes
+- LLM-assisted dataset generation with Anthropic prompt caching
 
 ## Installation
 
@@ -38,6 +44,24 @@ User Query → Router Agent → Retriever Agent → Synthesizer Agent → Respon
                  ▼                ▼
            Intent Class     Tool Selection
 ```
+
+## Module Structure
+
+| Module | Description |
+|--------|-------------|
+| `medquery.types` | Shared type definitions (EntityType, RelationshipType, IntentType) |
+| `medquery.backends` | Inference backends (MLX, OpenAI, Anthropic) with prompt presets |
+| `medquery.eval` | Benchmark evaluation framework with metrics collection |
+| `medquery.generators` | LLM-assisted dataset generation with validation utilities |
+
+## Evaluation Framework
+
+The evaluation subsystem provides comprehensive benchmarking capabilities:
+
+- **Validation Modes**: strict, lenient, partial output validation
+- **Metrics**: medical accuracy, intent accuracy, entity F1, latency percentiles
+- **Reports**: JSON, Markdown, HTML, CSV export formats
+- **Backends**: MLX (Apple Silicon), OpenAI API, Anthropic API
 
 ## License
 
