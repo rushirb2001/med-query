@@ -26,11 +26,11 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Add scripts directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add src directory to path for medquery imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from generators.base import QueryGenerator, GeneratedQuery
-from generators.templates import QUERY_TEMPLATES
+from medquery.generators import QueryGenerator, GeneratedQuery
+from medquery.generators.templates import QUERY_TEMPLATES
 
 
 # P1 Dataset configuration
